@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClimaTech Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --font-ui: "Space Grotesk", system-ui, sans-serif;
+            --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+            --bg-0: #05090f;
+            --bg-1: #0b1524;
+            --panel: rgba(19, 33, 54, 0.58);
+            --panel-strong: rgba(13, 24, 41, 0.86);
+            --panel-soft: rgba(23, 41, 64, 0.42);
+            --line: rgba(151, 186, 224, 0.14);
+            --line-strong: rgba(170, 202, 235, 0.28);
+
+            --text: #eef3fb;
+            --muted: rgba(203, 219, 240, 0.62);
+            --muted-strong: rgba(216, 229, 246, 0.86);
+
+            --temp: #ee9b88;
+            --humid: #8bc7dc;
+            --good: #8ee0bc;
+            --warn: #f2c17e;
+            --crit: #f19b8d;
+
+            --radius-sm: 10px;
+            --radius-md: 16px;
+            --radius-lg: 26px;
+
+            --shadow-panel: 0 20px 44px rgba(1, 6, 14, 0.4);
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { box-sizing: border-box; }
+        html { -webkit-text-size-adjust: 100%; }
+        html, body { margin: 0; min-height: 100%; }
+
+        body {
+            min-height: 100vh;
+            font-family: var(--font-ui);
+            color: var(--text);
+            background:
+                radial-gradient(1100px 620px at 12% -8%, rgba(139, 199, 220, 0.14), transparent 58%),
+                radial-gradient(900px 560px at 104% 6%, rgba(238, 155, 136, 0.09), transparent 55%),
+                linear-gradient(180deg, var(--bg-1), var(--bg-0));
+            background-attachment: fixed;
+            padding: clamp(10px, 3vw, 32px);
+            transition: background 500ms var(--ease);
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.55;
+            background-image:
+                linear-gradient(rgba(151, 186, 224, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(151, 186, 224, 0.05) 1px, transparent 1px);
+            background-size: 42px 42px;
+            mask-image: radial-gradient(ellipse 85% 55% at 50% 0%, black, transparent 78%);
+            -webkit-mask-image: radial-gradient(ellipse 85% 55% at 50% 0%, black, transparent 78%);
+        }
+
+        body[data-climate="warm"] { background: radial-gradient(1100px 620px at 12% -8%, rgba(242, 193, 126, 0.16), transparent 58%), radial-gradient(900px 560px at 104% 6%, rgba(238, 155, 136, 0.12), transparent 55%), linear-gradient(180deg, var(--bg-1), var(--bg-0)); }
+        body[data-climate="extreme"] { background: radial-gradient(1100px 620px at 12% -8%, rgba(241, 155, 141, 0.22), transparent 58%), radial-gradient(900px 560px at 104% 6%, rgba(241, 155, 141, 0.14), transparent 55%), linear-gradient(180deg, var(--bg-1), var(--bg-0)); }
+
+        .dashboard-shell {
+            position: relative;
+            z-index: 1;
+            width: min(1280px, 100%);
+            margin-inline: auto;
+            padding: clamp(10px, 2vw, 18px) clamp(10px, 2vw, 22px) clamp(64px, 6vw, 22px);
+            border-radius: var(--radius-lg);
+            background: linear-gradient(165deg, rgba(15, 30, 50, 0.7), rgba(7, 15, 27, 0.78));
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        /* ---------- Topbar ---------- */
+        .topbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 6px 16px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.86rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            color: var(--muted-strong);
+        }
+
+        .brand-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            overflow: hidden;
+            border-radius: 50%;
+            background: rgba(4, 14, 25, 0.7);
+            border: 1px solid var(--line-strong);
+        }
+
+        .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: screen; }
+
+        .nav {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 4px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(13, 26, 43, 0.5);
+            order: 3;
+            width: 100%;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .nav::-webkit-scrollbar { display: none; }
+
+        .nav-link {
+            flex: 0 0 auto;
+            appearance: none;
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            font: inherit;
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            padding: 0.62rem 0.9rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 160ms var(--ease), color 160ms var(--ease);
+        }
+        .nav-link:hover, .nav-link:focus-visible { color: var(--text); outline: none; }
+        .nav-link.active { background: rgba(139, 199, 220, 0.16); color: var(--text); }
+        .nav-link[data-mobile-only] { display: block; }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            color: var(--muted-strong);
+            font-size: 0.68rem;
+            letter-spacing: 0.03em;
+        }
+        .topbar-right > span:last-child { display: none; }
+
+        .device-city { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .board-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 9px;
+            color: var(--muted-strong);
+            font: inherit;
+            font-size: 0.62rem;
+            font-weight: 700;
+            cursor: default;
+            background: rgba(105, 126, 136, 0.14);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+        }
+        .board-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--crit); box-shadow: 0 0 8px var(--crit); }
+        .board-status.is-on { color: var(--good); background: rgba(83, 174, 137, 0.14); border-color: rgba(142, 224, 188, 0.28); }
+        .board-status.is-on::before { background: var(--good); box-shadow: 0 0 8px var(--good); }
+
+        .board-location { display: none; max-width: 190px; overflow: hidden; color: var(--muted); font-size: 0.6rem; text-overflow: ellipsis; text-decoration: none; white-space: nowrap; }
+        .board-location:hover { color: var(--text); text-decoration: underline; }
+        .mini-badge { display: none; }
+
+        /* ---------- Layout ---------- */
+        .main-layout { padding-top: 16px; }
+
+        .metric-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .metric-card, .detail-card, .chart-panel, .climate-card, .forecast-panel, .history-panel, .alerts-panel, .alerts-view-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .metric-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            gap: 10px;
+            min-height: 128px;
+            padding: 16px 14px;
+            border-radius: var(--radius-md);
+            transition: transform 200ms var(--ease), border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+        }
+        .metric-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 3px;
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+        }
+        .metric-card.temp::before { background: linear-gradient(90deg, var(--temp), rgba(238, 155, 136, 0.3)); }
+        .metric-card.humidity::before { background: linear-gradient(90deg, var(--humid), rgba(139, 199, 220, 0.3)); }
+        .metric-card:hover { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 28px rgba(0, 9, 18, 0.28); }
+        .metric-card:has(.metric-condition.critical) { border-color: rgba(241, 155, 141, 0.4); box-shadow: 0 0 0 1px rgba(241, 155, 141, 0.18); }
+
+        .metric-head { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted-strong); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; }
+        .metric-head .signal { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
+        .metric-card.temp .signal { background: var(--temp); color: var(--temp); }
+        .metric-card.humidity .signal { background: var(--humid); color: var(--humid); }
+
+        .metric-value { display: flex; align-items: baseline; justify-content: center; gap: 6px; line-height: 1; font-family: var(--font-mono); font-weight: 600; }
+        .metric-value .number { font-size: clamp(2rem, 7vw, 2.9rem); letter-spacing: -0.02em; }
+        .metric-card.temp .number { color: var(--temp); }
+        .metric-card.humidity .number { color: var(--humid); }
+        .metric-value .suffix { font-size: 1.1rem; opacity: 0.75; }
+
+        .metric-condition { display: inline-flex; align-items: center; gap: 6px; color: var(--good); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.04em; }
+        .condition-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 9px currentColor; }
+        .metric-condition.normal .condition-dot { animation: pulse 2.4s ease-in-out infinite; }
+        .metric-condition.attention { color: var(--warn); }
+        .metric-condition.critical { color: var(--crit); }
+        @keyframes pulse { 0%, 100% { opacity: 0.7; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } }
+
+        /* ---------- Chart + Assistant row ---------- */
+        .content-row { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: stretch; }
+
+        .chart-panel { padding: 14px 14px 8px; border-radius: var(--radius-md); }
+        .chart-header { display: flex; align-items: flex-start; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+        .chart-title { margin: 0; font-size: 0.86rem; font-weight: 600; color: var(--text); }
+        .chart-header .date-label { color: var(--muted); font-family: var(--font-mono); font-size: 0.65rem; }
+        .chart-wrap { position: relative; height: 200px; width: 100%; margin-top: 6px; }
+        canvas { width: 100% !important; height: 100% !important; display: block; cursor: grab; touch-action: none; }
+        canvas:active { cursor: grabbing; }
+
+        /* ---------- Detail row ---------- */
+        .detail-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+        .detail-card { padding: 12px 14px; border-radius: var(--radius-sm); }
+        .detail-label { margin: 0 0 8px; color: var(--muted); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.06em; }
+        .detail-value { display: flex; align-items: baseline; gap: 4px; font-family: var(--font-mono); font-weight: 600; line-height: 1; }
+        .detail-value strong { font-size: 1.5rem; letter-spacing: -0.02em; }
+        .detail-card.temp strong { color: var(--temp); }
+        .detail-card.humidity strong { color: var(--humid); }
+        .detail-meta { margin-top: 8px; color: var(--muted); font-size: 0.62rem; letter-spacing: 0.04em; }
+
+        /* ---------- Climate modules ---------- */
+        .climate-modules { display: grid; gap: 10px; margin-top: 12px; }
+        .module-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .climate-card { min-height: 96px; padding: 13px; border-radius: var(--radius-sm); }
+        .module-label { margin: 0; color: var(--muted); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.04em; }
+        .module-value { display: flex; align-items: baseline; gap: 4px; margin-top: 10px; color: var(--text); font-family: var(--font-mono); font-size: 1.4rem; font-weight: 600; }
+        .module-value small { color: var(--muted-strong); font-size: 0.7rem; }
+        .module-note { margin: 6px 0 0; color: var(--muted); font-size: 0.64rem; }
+        .status-card { position: relative; overflow: hidden; }
+        .status-value { color: var(--good); font-size: 1.05rem; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 12px var(--good); }
+
+        .module-row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .forecast-panel, .history-panel, .alerts-panel { padding: 14px; border-radius: var(--radius-sm); }
+        .module-header { display: flex; align-items: flex-start; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+        .module-title { margin: 0; color: var(--text); font-size: 0.8rem; font-weight: 600; }
+        .module-caption { color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem; }
+
+        .forecast-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+        .forecast-day { padding: 9px 4px; text-align: center; background: var(--panel-soft); border: 1px solid var(--line); border-radius: 9px; }
+        .forecast-day:nth-child(5) { display: none; }
+        .forecast-day strong { display: block; color: var(--muted-strong); font-size: 0.64rem; font-weight: 600; }
+        .forecast-icon { display: block; margin: 8px 0; color: var(--humid); font-size: 1rem; }
+        .forecast-temp { color: var(--temp); font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600; }
+        .forecast-humidity { display: block; margin-top: 4px; color: var(--humid); font-family: var(--font-mono); font-size: 0.62rem; }
+
+        .history-chart-wrap { height: 150px; }
+
+        .alerts-panel { scroll-margin-top: 14px; min-height: 96px; }
+        .alert-list { display: grid; gap: 7px; }
+        .alert-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; background: var(--panel-soft); border-radius: 8px; color: var(--muted-strong); font-size: 0.7rem; transition: background 160ms var(--ease), transform 160ms var(--ease); }
+        .alert-item:hover { transform: translateX(2px); background: rgba(43, 102, 122, 0.28); }
+        .alert-item::before { content: ""; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--good); box-shadow: 0 0 10px var(--good); }
+        .alert-item.warning::before { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+        .alert-item.critical::before { background: var(--crit); box-shadow: 0 0 10px var(--crit); }
+        .empty-alert { color: var(--muted); font-size: 0.7rem; }
+
+        /* ---------- Alerts full view ---------- */
+        .alerts-view { display: none; padding-top: 16px; }
+        .alerts-view.is-visible { display: block; }
+        .alerts-view-header { display: flex; align-items: flex-start; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+        .alerts-view-title { margin: 0; color: var(--text); font-size: 1.15rem; }
+        .alerts-view-subtitle { margin: 5px 0 0; color: var(--muted); font-size: 0.74rem; }
+        .back-dashboard { width: 100%; padding: 10px 12px; color: var(--muted-strong); font: inherit; font-size: 0.72rem; font-weight: 600; cursor: pointer; background: rgba(114, 178, 190, 0.12); border: 1px solid var(--line-strong); border-radius: 8px; transition: background 160ms var(--ease); }
+        .back-dashboard:hover { background: rgba(114, 178, 190, 0.22); }
+        .alerts-view-card { min-height: 220px; padding: 16px; border-radius: var(--radius-md); }
+        .alerts-view-card .alert-list { max-width: 720px; }
+
+        /* ---------- AURA assistant ---------- */
+        .tech-assistant { position: relative; z-index: 5; min-width: 0; font-family: var(--font-ui); }
+        .tech-toggle {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 20;
+            display: grid;
+            width: 54px;
+            height: 54px;
+            place-items: center;
+            padding: 0;
+            color: #dff7f7;
+            cursor: pointer;
+            background: linear-gradient(145deg, #c9e9ec, #5d9dad 58%, #244f68);
+            border: 1px solid rgba(235, 255, 255, 0.6);
+            border-radius: 50%;
+            box-shadow: 0 12px 28px rgba(0, 8, 18, 0.45);
+            transition: transform 180ms var(--ease), filter 180ms var(--ease);
+        }
+        .tech-toggle:hover, .tech-toggle:focus-visible { filter: brightness(1.1); transform: translateY(-2px) scale(1.04); outline: none; }
+        .tech-face { position: relative; width: 32px; height: 26px; background: #1a3f56; border: 2px solid rgba(222, 250, 250, 0.72); border-radius: 11px; }
+        .tech-face::before { content: ""; position: absolute; left: 7px; top: 7px; width: 4px; height: 4px; background: #bff5f0; border-radius: 50%; box-shadow: 12px 0 #bff5f0; }
+        .tech-face::after { content: ""; position: absolute; left: 10px; bottom: 5px; width: 9px; height: 4px; border-bottom: 2px solid #bff5f0; border-radius: 0 0 9px 9px; }
+
+        .tech-chat {
+            position: fixed;
+            right: 14px;
+            bottom: 84px;
+            left: 14px;
+            z-index: 19;
+            display: flex;
+            flex-direction: column;
+            width: auto;
+            height: min(70vh, 520px);
+            overflow: hidden;
+            background: linear-gradient(155deg, rgba(14, 30, 46, 0.98), rgba(5, 14, 25, 0.98));
+            border: 1px solid var(--line-strong);
+            border-radius: var(--radius-md);
+            box-shadow: 0 24px 64px rgba(0, 7, 16, 0.6);
+            opacity: 1;
+            transform: none;
+            transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+        }
+        .tech-chat:not(.is-open) { opacity: 0; pointer-events: none; transform: translateY(12px) scale(0.98); }
+        .tech-chat.is-open { opacity: 1; pointer-events: auto; }
+
+        .tech-chat-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: rgba(102, 171, 185, 0.1); border-bottom: 1px solid var(--line); }
+        .tech-identity { display: flex; align-items: center; gap: 9px; }
+        .tech-mini-face { display: grid; width: 28px; height: 28px; place-items: center; color: #bff5f0; font-size: 0.62rem; background: #1d4d62; border: 1px solid rgba(210, 246, 246, 0.4); border-radius: 8px; }
+        .tech-name { display: block; color: var(--text); font-size: 0.82rem; font-weight: 700; }
+        .tech-status { display: block; margin-top: 2px; color: var(--good); font-size: 0.61rem; }
+        .tech-status::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 5px; background: var(--good); border-radius: 50%; box-shadow: 0 0 8px var(--good); }
+        .tech-status-detail { display: block; max-width: 190px; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
+        .tech-tools { display: flex; align-items: center; gap: 2px; }
+        .tech-close, .tech-audio { padding: 4px 6px; color: var(--muted-strong); font-size: 1rem; line-height: 1; cursor: pointer; background: transparent; border: 0; }
+        .tech-audio.is-muted { opacity: 0.4; }
+
+        .tech-messages { position: relative; flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 14px; overflow-y: auto; background: var(--bg-1); }
+        .tech-message { max-width: 88%; padding: 9px 11px; color: var(--text); font-size: 0.76rem; line-height: 1.44; border: 1px solid var(--line); border-radius: 12px 12px 12px 3px; background: rgba(70, 133, 151, 0.24); }
+        .tech-message.user { align-self: flex-end; border-radius: 12px 12px 3px 12px; background: rgba(73, 127, 153, 0.5); }
+        .tech-message strong { color: #ffffff; }
+        .tech-message ul { margin: 0; padding-left: 17px; }
+        .tech-message li + li { margin-top: 6px; }
+
+        .tech-prompts { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 12px 10px; background: var(--bg-1); }
+        .tech-prompts button { padding: 6px 9px; color: var(--muted-strong); font: inherit; font-size: 0.63rem; cursor: pointer; background: rgba(73, 139, 155, 0.2); border: 1px solid var(--line-strong); border-radius: 999px; transition: background 160ms var(--ease), transform 160ms var(--ease); }
+        .tech-prompts button:hover, .tech-prompts button:focus-visible { background: rgba(73, 139, 155, 0.42); transform: translateY(-1px); outline: none; }
+
+        .tech-composer { display: flex; gap: 7px; padding: 10px; border-top: 1px solid var(--line); }
+        .tech-input { min-width: 0; flex: 1; padding: 10px 12px; color: var(--text); font: inherit; font-size: 0.76rem; background: rgba(3, 12, 22, 0.7); border: 1px solid var(--line-strong); border-radius: 9px; outline: none; }
+        .tech-input:focus { border-color: rgba(145, 215, 225, 0.7); }
+        .tech-send, .tech-mic { display: grid; width: 38px; place-items: center; font-size: 1rem; cursor: pointer; border-radius: 9px; }
+        .tech-send { color: #f2ffff; background: #367c8b; border: 1px solid rgba(191, 237, 239, 0.3); }
+        .tech-mic { color: #c5edef; background: rgba(74, 139, 155, 0.3); border: 1px solid var(--line-strong); }
+        .tech-mic.is-listening { background: rgba(222, 137, 124, 0.6); box-shadow: 0 0 0 4px rgba(222, 137, 124, 0.14); }
+        .tech-waves { display: inline-flex; align-items: center; gap: 2px; height: 12px; margin-left: 5px; vertical-align: middle; }
+        .tech-waves span { width: 2px; height: 6px; background: var(--good); border-radius: 2px; animation: aura-wave 900ms ease-in-out infinite alternate; }
+        .tech-waves span:nth-child(2) { height: 11px; animation-delay: 120ms; }
+        .tech-waves span:nth-child(3) { height: 8px; animation-delay: 240ms; }
+        @keyframes aura-wave { from { transform: scaleY(0.45); opacity: 0.5; } to { transform: scaleY(1); opacity: 1; } }
+
+        /* ---------- Accessibility ---------- */
+        :focus-visible { outline: 2px solid rgba(139, 199, 220, 0.8); outline-offset: 2px; }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+        }
+
+        /* ---------- Tablet / small desktop ---------- */
+        @media (min-width: 640px) {
+            .module-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .forecast-list { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+            .forecast-day:nth-child(5) { display: block; }
+            .tech-chat { left: auto; width: min(380px, calc(100vw - 28px)); }
+        }
+
+        /* ---------- Desktop ---------- */
+        @media (min-width: 1000px) {
+            body { display: flex; align-items: center; justify-content: center; }
+            .dashboard-shell { padding: 18px 22px 22px; }
+            .nav { order: 0; width: auto; }
+            .topbar-right > span:last-child { display: inline; }
+            .device-city { max-width: 150px; }
+            .board-location { display: inline-block; }
+            .mini-badge { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--humid), #b6d1ff); box-shadow: 0 0 18px rgba(139, 199, 220, 0.7); }
+
+            .content-row { grid-template-columns: minmax(0, 1fr) 340px; }
+            .chart-wrap { height: 300px; }
+
+            .tech-assistant { position: static; }
+            .tech-toggle { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; z-index: 6; opacity: 0.85; }
+            .tech-toggle .tech-face { transform: scale(0.6); }
+            .tech-chat { position: relative; inset: auto; width: 100%; height: 100%; min-height: 420px; }
+
+            .module-row { grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr); }
+        }
+    </style>
+
+</head>
+<body data-theme="dark">
+    <div class="dashboard-shell">
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-mark"><img src="img/timbre.jpeg" alt="Brasão do Centro Estadual de Tempo Integral Maria Chaves" /></span>
+                <span>ATMOSTECH</span>
+            </div>
+
+            <nav class="nav" aria-label="Navegação principal">
+                <button class="nav-link active" id="dashboardNav" type="button">Painel Geral</button>
+                <button class="nav-link" id="reportsNav" type="button">Relatórios</button>
+                <button class="nav-link" id="alertsNav" type="button">Alertas</button>
+                <button class="nav-link" id="updatesNav" type="button" data-mobile-only>Atualizações</button>
+                <button class="nav-link" id="faqNav" type="button" data-mobile-only>Perguntas Frequentes</button>
+            </nav>
+
+            <div class="topbar-right">
+                <span class="device-city" id="deviceCity">Localizando...</span>
+                <button class="board-status is-off" id="boardStatus" type="button" aria-label="Status da placa" aria-pressed="false"><span>Placa <strong id="boardStatusLabel">OFF</strong></span></button>
+                <a class="board-location" id="boardLocation" href="#" target="_blank" rel="noopener">GPS do dispositivo aguardando</a>
+                <span class="mini-badge"></span>
+                <span>ATMOSTECH</span>
+            </div>
+        </header>
+
+        <main class="main-layout">
+            <section class="metric-row" aria-label="Indicadores climáticos principais">
+                <article class="metric-card temp">
+                    <div class="metric-head">
+                        <span>Temperatura</span>
+                        <span class="signal" aria-hidden="true"></span>
+                    </div>
+                    <div class="metric-value">
+                        <span class="number" id="tempAtual">--</span>
+                        <span class="suffix">°C</span>
+                    </div>
+                    <div class="metric-condition" id="tempCondition"><span class="condition-dot"></span><span>Monitorando</span></div>
+                </article>
+
+                <article class="metric-card humidity">
+                    <div class="metric-head">
+                        <span>Umidade</span>
+                        <span class="signal" aria-hidden="true"></span>
+                    </div>
+                    <div class="metric-value">
+                        <span class="number" id="umidAtual">--</span>
+                        <span class="suffix">%</span>
+                    </div>
+                    <div class="metric-condition" id="humidityCondition"><span class="condition-dot"></span><span>Monitorando</span></div>
+                </article>
+            </section>
+
+            <section class="content-row">
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <h2 class="chart-title">Monitoramento de Temperatura e Umidade</h2>
+                        <span class="date-label" id="dataAtual">Seg, 21 Jan 2024, 11:14:32, BR</span>
+                    </div>
+                    <div class="chart-wrap">
+                        <canvas id="meuGrafico" aria-label="Gráfico de temperatura e umidade"></canvas>
+                    </div>
+                </div>
+
+                <section class="tech-assistant" aria-label="Assistente virtual AURA">
+                    <div class="tech-chat is-open" id="techChat" aria-hidden="false">
+                        <header class="tech-chat-header">
+                            <div class="tech-identity"><span class="tech-mini-face">✦</span><div><span class="tech-name">AURA</span><span class="tech-status">Online <span class="tech-waves" aria-label="Áudio ativo"><span></span><span></span><span></span></span></span><span class="tech-status-detail" id="auraStatusDetail">Monitoramento climático ativo</span></div></div>
+                            <div class="tech-tools"><button class="tech-audio" id="techAudio" type="button" aria-label="Ativar ou desativar voz">◖</button><button class="tech-close" id="techClose" type="button" aria-label="Fechar assistente">×</button></div>
+                        </header>
+                        <div class="tech-messages" id="techMessages" aria-live="polite"></div>
+                        <div class="tech-prompts" aria-label="Perguntas rápidas">
+                            <button type="button" data-tech-prompt="Qual é a temperatura atual?">Temperatura atual</button>
+                            <button type="button" data-tech-prompt="Como está a umidade?">Umidade</button>
+                            <button type="button" data-tech-prompt="Há algum alerta agora?">Alertas</button>
+                            <button type="button" data-tech-prompt="A placa está online?">Status da placa</button>
+                        </div>
+                        <form class="tech-composer" id="techForm">
+                            <input class="tech-input" id="techInput" type="text" placeholder="Pergunte sobre clima, alertas ou recomendações..." autocomplete="off" />
+                            <button class="tech-mic" id="techMic" type="button" aria-label="Falar com AURA">●</button>
+                            <button class="tech-send" type="submit" aria-label="Enviar pergunta">➤</button>
+                        </form>
+                    </div>
+                    <button class="tech-toggle" id="techToggle" type="button" aria-label="Consultar AURA" aria-expanded="true"><span class="tech-face" aria-hidden="true"></span></button>
+                </section>
+
+            </section>
+
+            <section class="detail-row" aria-label="Detalhes dos indicadores">
+                <article class="detail-card temp">
+                    <p class="detail-label">Temperatura</p>
+                    <div class="detail-value"><strong id="tempDetalhe">23.3</strong><span>°C</span></div>
+                    <div class="detail-meta">Hoje</div>
+                </article>
+
+                <article class="detail-card humidity">
+                    <p class="detail-label">Umidade</p>
+                    <div class="detail-value"><strong id="umidDetalhe">68</strong><span>%</span></div>
+                    <div class="detail-meta">Hoje</div>
+                </article>
+            </section>
+
+            <section class="climate-modules" aria-label="Informações climáticas complementares">
+                <div class="module-grid">
+                    <article class="climate-card">
+                        <p class="module-label">Sensação térmica</p>
+                        <div class="module-value"><span id="feelsLike">--</span><small>°C</small></div>
+                        <p class="module-note">Calculada pela umidade atual</p>
+                    </article>
+                    <article class="climate-card">
+                        <p class="module-label">Ponto de orvalho</p>
+                        <div class="module-value"><span id="dewPoint">--</span><small>°C</small></div>
+                        <p class="module-note">Conforto do ambiente</p>
+                    </article>
+                    <article class="climate-card">
+                        <p class="module-label">Velocidade do vento</p>
+                        <div class="module-value"><span id="windSpeed">--</span><small>km/h</small></div>
+                        <p class="module-note">Estimativa do monitor</p>
+                    </article>
+                    <article class="climate-card status-card">
+                        <p class="module-label">Status do ambiente</p>
+                        <div class="module-value status-value"><span class="status-dot" id="statusDot"></span><span id="environmentStatus">--</span></div>
+                        <p class="module-note" id="statusDescription">Aguardando leitura</p>
+                    </article>
+                </div>
+
+                <div class="module-row">
+                    <section class="forecast-panel" aria-label="Previsão para os próximos dias">
+                        <div class="module-header"><h2 class="module-title">Previsão dos próximos dias</h2><span class="module-caption" id="forecastLocation">Localizando...</span></div>
+                        <div class="forecast-list" id="forecastList"></div>
+                    </section>
+                    <section class="history-panel" aria-label="Histórico e médias diárias">
+                        <div class="module-header"><h2 class="module-title">Histórico comparativo</h2><span class="module-caption" id="dailyAverage">Média: --</span></div>
+                        <div class="history-chart-wrap"><canvas id="historicoGrafico" aria-label="Médias históricas de temperatura e umidade"></canvas></div>
+                    </section>
+                </div>
+
+                <section class="alerts-panel" id="alertsPanel" aria-label="Alertas climáticos">
+                    <div class="module-header"><h2 class="module-title">Alertas do ambiente</h2><span class="module-caption" id="alertCount">0 avisos</span></div>
+                    <div class="alert-list" id="alertList"><span class="empty-alert">Nenhum alerta ativo no momento.</span></div>
+                </section>
+            </section>
+
+        </main>
+
+        <section class="alerts-view" id="alertsView" aria-labelledby="alertsViewTitle">
+            <div class="alerts-view-header">
+                <div><h1 class="alerts-view-title" id="alertsViewTitle">Central de Alertas</h1><p class="alerts-view-subtitle">Acompanhe variações bruscas e condições fora da faixa ideal.</p></div>
+                <button class="back-dashboard" id="backDashboard" type="button">Voltar ao dashboard</button>
+            </div>
+            <div class="alerts-view-card">
+                <div class="module-header"><h2 class="module-title">Avisos do ambiente</h2><span class="module-caption" id="alertsPageCount">0 avisos</span></div>
+                <div class="alert-list" id="alertsPageList"><span class="empty-alert">Nenhum alerta ativo no momento.</span></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
